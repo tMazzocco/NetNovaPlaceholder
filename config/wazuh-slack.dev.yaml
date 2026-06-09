@@ -1,0 +1,38 @@
+slack:
+  token_bot: "${SLACK_BOT_TOKEN}"
+  token_app: "${SLACK_APP_TOKEN}"
+  token_user: "${SLACK_USER_TOKEN}"
+  org_id: "E0AN66GDRRU"
+  sources:
+    audit:         { enabled: true, poll_seconds: 60 }
+    events:        { enabled: true, mode: socket }   # set true once tokens provided
+    access_logs:   { enabled: false, poll_seconds: 300 }
+    web_inventory: { enabled: true, poll_seconds: 3600 }
+
+filters:
+  drop: []
+  events:
+    allow:
+      - field: slack.action
+        in: [tokens_revoked, app_uninstalled, file_public, member_joined_channel,
+             channel_created, subteam_created, team_join, file_shared]
+
+severity_map:
+  mfa_disabled:             critical
+  sso_disabled:             critical
+  role_change_to_admin:     high
+  file_public_link_created: medium
+  app_installed:            medium
+  user_login_failed:        low
+
+sink:
+  kind: json_file
+  path: ./events.ndjson
+  rotate_mb: 50
+
+state:
+  sqlite_path: ./state.db
+
+observability:
+  health_bind: 127.0.0.1:9184
+  log_level: info

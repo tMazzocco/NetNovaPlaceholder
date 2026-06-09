@@ -1,0 +1,18 @@
+{
+  "id": "1123a45b-6c7d-8901-e2f3-456789abcdef",
+  "date_create": 1715000100,
+  "action": "file_downloaded",
+  "actor": {
+    "type": "user",
+    "user": { "id": "U1234567890", "name": "alice", "email": "alice@example.com", "team": "T1234567890" }
+  },
+  "entity": {
+    "type": "file",
+    "file": { "id": "F0987654321", "name": "salaries-2026.xlsx", "filetype": "xlsx", "title": "Salaries", "mimetype": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
+  },
+  "context": {
+    "location": { "type": "workspace", "id": "T1234567890", "name": "Example", "domain": "example" },
+    "ua": "Slack/4.36.0",
+    "ip_address": "203.0.113.10"
+  }
+}

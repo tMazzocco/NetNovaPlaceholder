@@ -1,0 +1,10 @@
+<!--
+  Wazuh AGENT-SIDE ingestion of the wazuh-slack connector's NDJSON output.
+  Add inside <ossec_config> on the Wazuh agent running on the host where
+  the connector writes its JsonFileSink.
+-->
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/log/wazuh-slack/events.ndjson</location>
+  <label key="source">slack-connector</label>
+</localfile>

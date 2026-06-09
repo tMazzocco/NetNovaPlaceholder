@@ -1,0 +1,13 @@
+{
+  "token": "verification-token",
+  "team_id": "T1234567890",
+  "api_app_id": "A0AAAAAAA",
+  "event": {
+    "type": "tokens_revoked",
+    "tokens": { "oauth": ["U1234567890"], "bot": ["U2222222222"] },
+    "event_ts": "1715000500.000400"
+  },
+  "type": "event_callback",
+  "event_id": "Ev0GGGGGGG",
+  "event_time": 1715000500
+}

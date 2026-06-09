@@ -1,0 +1,21 @@
+[Unit]
+Description=Wazuh ↔ Slack connector
+After=network-online.target wazuh-manager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wazuh
+Group=wazuh
+EnvironmentFile=-/etc/wazuh-slack/wazuh-slack.env
+ExecStart=/usr/local/bin/wazuh-slack --config /etc/wazuh-slack/wazuh-slack.yaml
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/wazuh-slack /var/ossec/queue/sockets
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

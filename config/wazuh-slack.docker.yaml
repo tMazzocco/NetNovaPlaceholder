@@ -1,0 +1,39 @@
+slack:
+  token_bot: "${SLACK_BOT_TOKEN}"
+  token_app: "${SLACK_APP_TOKEN}"
+  sources:
+    audit:         { enabled: false, poll_seconds: 60 }
+    events:        { enabled: true,  mode: socket }
+    access_logs:   { enabled: false, poll_seconds: 300 }
+    web_inventory: { enabled: false, poll_seconds: 3600 }
+
+filters:
+  drop: []
+  events:
+    allow:
+      - field: slack.action
+        in: [tokens_revoked, app_uninstalled, file_public, member_joined_channel,
+             channel_created, subteam_created, team_join, file_shared]
+
+severity_map:
+  mfa_disabled:             critical
+  sso_disabled:             critical
+  role_change_to_admin:     high
+  file_public_link_created: medium
+  app_installed:            medium
+  user_login_failed:        low
+
+# Writes NDJSON into the volume shared with the Wazuh manager, which tails it
+# via <localfile log_format="json">.
+sink:
+  kind: json_file
+  path: /var/log/wazuh-slack/events.ndjson
+  rotate_mb: 50
+
+state:
+  sqlite_path: /var/lib/wazuh-slack/state.db
+
+observability:
+  prometheus_bind: 0.0.0.0:9183
+  health_bind: 0.0.0.0:9184
+  log_level: info

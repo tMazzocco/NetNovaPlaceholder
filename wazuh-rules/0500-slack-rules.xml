@@ -1,0 +1,193 @@
+<!--
+  Slack ruleset for the wazuh-slack connector.
+
+  Rule ID range: 100000–100099 reserved.
+  All rules namespace under group `slack`.
+
+  Severity → Wazuh level mapping convention:
+    info     -> 3
+    low      -> 5
+    medium   -> 8
+    high     -> 10
+    critical -> 13
+
+  Behavioural rules below cover both free-tier signals (Events API) and
+  Enterprise-tier signals (Audit Logs API). Free-tier rules fire on
+  upload/share/public-link bursts; Enterprise rules fire on the
+  equivalent download/role/MFA/SSO actions.
+-->
+<group name="slack,">
+
+  <!-- 100000 — base catch-all so child rules can use if_sid -->
+  <rule id="100000" level="0">
+    <decoded_as>slack</decoded_as>
+    <description>Slack: event ingested</description>
+  </rule>
+
+  <!-- ───────────── Events-API tier (works on free workspace) ───────────── -->
+
+  <rule id="100010" level="5">
+    <if_sid>100000</if_sid>
+    <field name="slack.action">member_joined_channel</field>
+    <description>Slack: user joined channel $(slack.entity.id)</description>
+    <group>slack,membership,</group>
+  </rule>
+
+  <rule id="100011" level="10" frequency="20" timeframe="3600">
+    <if_matched_sid>100010</if_matched_sid>
+    <same_field>slack.actor.id</same_field>
+    <description>Slack: user $(slack.actor.id) joined 20+ channels in 1h (recon pattern)</description>
+    <group>slack,insider_threat,recon,</group>
+  </rule>
+
+  <rule id="100020" level="5">
+    <if_sid>100000</if_sid>
+    <field name="slack.action">file_shared</field>
+    <description>Slack: file shared by $(slack.actor.id)</description>
+    <group>slack,file,</group>
+  </rule>
+
+  <rule id="100021" level="10" frequency="20" timeframe="3600">
+    <if_matched_sid>100020</if_matched_sid>
+    <same_field>slack.actor.id</same_field>
+    <description>Slack: user $(slack.actor.id) shared 20+ files in 1h (exfil staging)</description>
+    <group>slack,exfil,insider_threat,</group>
+  </rule>
+
+  <rule id="100025" level="8">
+    <if_sid>100000</if_sid>
+    <field name="slack.action">file_public</field>
+    <description>Slack: file made public by $(slack.actor.id)</description>
+    <group>slack,file,exposure,</group>
+  </rule>
+
+  <rule id="100026" level="12" frequency="5" timeframe="600">
+    <if_matched_sid>100025</if_matched_sid>
+    <same_field>slack.actor.id</same_field>
+    <description>Slack: user $(slack.actor.id) made 5+ files public in 10min</description>
+    <group>slack,exfil,exposure,</group>
+  </rule>
+
+  <rule id="100030" level="8">
+    <if_sid>100000</if_sid>
+    <field name="slack.action">tokens_revoked</field>
+    <description>Slack: tokens revoked — investigate session hijack / forced sign-out</description>
+    <group>slack,authentication,</group>
+  </rule>
+
+  <rule id="100031" level="8">
+    <if_sid>100000</if_sid>
+    <field name="slack.action">app_uninstalled</field>
+    <description>Slack: app uninstalled — possible attempt to drop detection coverage</description>
+    <group>slack,integrations,</group>
+  </rule>
+
+  <rule id="100032" level="8">
+    <if_sid>100000</if_sid>
+    <field name="slack.action">app_installed</field>
+    <description>Slack: new app installed — confirm authorised integration</description>
+    <group>slack,integrations,</group>
+  </rule>
+
+  <rule id="100040" level="5">
+    <if_sid>100000</if_sid>
+    <field name="slack.action">channel_created</field>
+    <description>Slack: channel created</description>
+    <group>slack,governance,</group>
+  </rule>
+
+  <rule id="100041" level="5">
+    <if_sid>100000</if_sid>
+    <field name="slack.action">team_join</field>
+    <description>Slack: new workspace member</description>
+    <group>slack,membership,</group>
+  </rule>
+
+  <rule id="100042" level="5">
+    <if_sid>100000</if_sid>
+    <field name="slack.action">subteam_created</field>
+    <description>Slack: user group (subteam) created</description>
+    <group>slack,governance,</group>
+  </rule>
+
+  <!-- ───────────── Audit-Logs tier (Enterprise Grid) ───────────── -->
+
+  <rule id="100050" level="8">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action">file_downloaded</field>
+    <description>Slack: file downloaded by $(slack.actor.id)</description>
+    <group>slack,file,audit,</group>
+  </rule>
+
+  <rule id="100051" level="12" frequency="50" timeframe="86400">
+    <if_matched_sid>100050</if_matched_sid>
+    <same_field>slack.actor.id</same_field>
+    <description>Slack: user $(slack.actor.id) downloaded 50+ files in 24h (Replit-pattern insider)</description>
+    <group>slack,exfil,insider_threat,audit,</group>
+  </rule>
+
+  <rule id="100060" level="5">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action">user_login_failed</field>
+    <description>Slack: login failed for $(slack.actor.id)</description>
+    <group>slack,authentication,audit,</group>
+  </rule>
+
+  <rule id="100061" level="10" frequency="10" timeframe="600">
+    <if_matched_sid>100060</if_matched_sid>
+    <same_field>slack.actor.id</same_field>
+    <description>Slack: 10+ failed logins for $(slack.actor.id) in 10min (brute force)</description>
+    <group>slack,authentication,attack,audit,</group>
+  </rule>
+
+  <rule id="100070" level="13">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action">mfa_disabled</field>
+    <description>Slack: MFA disabled — high-severity policy regression</description>
+    <group>slack,authentication,policy,audit,</group>
+  </rule>
+
+  <rule id="100071" level="13">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action">sso_disabled</field>
+    <description>Slack: SSO disabled — high-severity policy regression</description>
+    <group>slack,authentication,policy,audit,</group>
+  </rule>
+
+  <rule id="100072" level="10">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action">role_change_to_admin</field>
+    <description>Slack: user $(slack.entity.id) elevated to admin by $(slack.actor.id)</description>
+    <group>slack,policy,privilege_escalation,audit,</group>
+  </rule>
+
+  <rule id="100073" level="8">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action">file_public_link_created</field>
+    <description>Slack: public file link created — review for sensitive content exposure</description>
+    <group>slack,file,exposure,audit,</group>
+  </rule>
+
+  <rule id="100074" level="10">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action">channel_created_external_shared</field>
+    <description>Slack: externally-shared channel created — verify authorisation</description>
+    <group>slack,governance,external,audit,</group>
+  </rule>
+
+  <rule id="100075" level="10">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action">guest_created</field>
+    <description>Slack: guest user created — confirm contracted access</description>
+    <group>slack,membership,external,audit,</group>
+  </rule>
+
+</group>

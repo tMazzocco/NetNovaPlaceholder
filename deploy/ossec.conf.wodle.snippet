@@ -1,0 +1,15 @@
+<!--
+  Wazuh MANAGER-SIDE invocation. Add inside <ossec_config>.
+  Connector binary writes directly to the analysisd queue socket
+  (UnixSocketSink) so events flow into the same pipeline as the built-in
+  O365/GitHub/AWS wodles.
+-->
+<wodle name="command">
+  <disabled>no</disabled>
+  <tag>wazuh-slack</tag>
+  <command>/usr/local/bin/wazuh-slack --config /etc/wazuh-slack/wazuh-slack.yaml</command>
+  <interval>1d</interval>
+  <ignore_output>no</ignore_output>
+  <run_on_start>yes</run_on_start>
+  <timeout>0</timeout>
+</wodle>

@@ -1,0 +1,16 @@
+{
+  "token": "verification-token",
+  "team_id": "T1234567890",
+  "api_app_id": "A0AAAAAAA",
+  "event": {
+    "type": "file_shared",
+    "file_id": "F0987654321",
+    "user_id": "U1234567890",
+    "file": { "id": "F0987654321" },
+    "channel_id": "C0CCCCCCC",
+    "event_ts": "1715000300.000200"
+  },
+  "type": "event_callback",
+  "event_id": "Ev0EEEEEEE",
+  "event_time": 1715000300
+}

@@ -1,0 +1,18 @@
+{
+  "token": "verification-token",
+  "team_id": "T1234567890",
+  "api_app_id": "A0AAAAAAA",
+  "event": {
+    "type": "member_joined_channel",
+    "user": "U1234567890",
+    "channel": "C0CCCCCCC",
+    "channel_type": "C",
+    "team": "T1234567890",
+    "inviter": "U2222222222",
+    "event_ts": "1715000200.000100"
+  },
+  "type": "event_callback",
+  "event_id": "Ev0DDDDDDD",
+  "event_time": 1715000200,
+  "authorizations": [{ "enterprise_id": null, "team_id": "T1234567890", "user_id": "U2222222222", "is_bot": true, "is_enterprise_install": false }]
+}

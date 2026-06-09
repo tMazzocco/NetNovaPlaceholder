@@ -1,0 +1,14 @@
+# One-shot TLS cert generation for the Wazuh indexer/dashboard/manager.
+# Run ONCE before the first `docker compose up`:
+#
+#   docker compose -f generate-certs.yml run --rm generator
+#
+# Writes certs into config/wazuh_indexer_ssl_certs/.
+services:
+  generator:
+    image: wazuh/wazuh-certs-generator:0.0.2
+    hostname: wazuh-certs-generator
+    volumes:
+      - ./config/wazuh_indexer_ssl_certs/:/certificates/
+      - ./config/certs.yml:/config/certs.yml
+    entrypoint: sh -c "/entrypoint.sh; chown -R 1000:1000 /certificates"

@@ -1,0 +1,10 @@
+/target
+/Cargo.lock
+*.swp
+.env
+.env.*
+!.env.example
+/spool
+/state.db
+/state.db-*
+/var
