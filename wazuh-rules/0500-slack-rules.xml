@@ -190,4 +190,87 @@
     <group>slack,membership,external,audit,</group>
   </rule>
 
+  <!-- ───────────── Insider-threat extensions (Gaps 2–5) ───────────── -->
+  <!-- IDs 100080–100099 reserved for the INSIDER-THREAT-GAPS.md roadmap. -->
+
+  <!-- Gap 2 — Slack's own anomaly detection (excessive downloads, suspicious
+       login, token theft). The closest direct "abnormal activity" signal. -->
+  <rule id="100080" level="12">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action">anomaly</field>
+    <description>Slack: Slack-detected anomaly for actor $(slack.actor.id) — review audit details</description>
+    <group>slack,insider_threat,anomaly,audit,</group>
+  </rule>
+
+  <!-- Gap 3 — data / workspace export (the loudest exfil signal). -->
+  <rule id="100081" level="12">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action" type="pcre2">^(export_started|export_completed)$</field>
+    <description>Slack: data export ($(slack.action)) by $(slack.actor.id) — potential bulk exfiltration</description>
+    <group>slack,exfil,insider_threat,export,audit,</group>
+  </rule>
+
+  <rule id="100082" level="12">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action">workspace_exported</field>
+    <description>Slack: workspace exported by $(slack.actor.id) — high-volume exfiltration</description>
+    <group>slack,exfil,insider_threat,export,audit,</group>
+  </rule>
+
+  <rule id="100083" level="13">
+    <if_sid>100000</if_sid>
+    <field name="slack.source">audit</field>
+    <field name="slack.action">organization_exported</field>
+    <description>Slack: ORG-WIDE export by $(slack.actor.id) — critical exfiltration event</description>
+    <group>slack,exfil,insider_threat,export,audit,</group>
+  </rule>
+
+  <!-- Gap 4 — login context anomaly (new IP / geo).
+       Uses CDB allow-lists; full impossible-travel (velocity) is out of scope for
+       stateless Wazuh — allow-listing covers ~80% of the signal.
+       `user_login` is emitted by both the audit (ip_address) and access_logs
+       (country) sources; the IP rule keys off the audit IP, the country rule off
+       the access-logs country string. -->
+  <rule id="100090" level="3">
+    <if_sid>100000</if_sid>
+    <field name="slack.action">user_login</field>
+    <description>Slack: successful login by $(slack.actor.id)</description>
+    <group>slack,authentication,</group>
+  </rule>
+
+  <rule id="100091" level="10">
+    <if_sid>100090</if_sid>
+    <list field="slack.context.ip" lookup="not_address_match_key">etc/lists/slack-trusted-networks</list>
+    <description>Slack: login by $(slack.actor.id) from IP $(slack.context.ip) outside trusted networks</description>
+    <group>slack,authentication,insider_threat,geo,audit,</group>
+  </rule>
+
+  <rule id="100092" level="8">
+    <if_sid>100090</if_sid>
+    <list field="slack.context.location" lookup="not_match_key">etc/lists/slack-allowed-countries</list>
+    <description>Slack: login by $(slack.actor.id) from country $(slack.context.location) outside allow-list</description>
+    <group>slack,authentication,insider_threat,geo,</group>
+  </rule>
+
+  <!-- Gap 5 — off-hours activity burst.
+       `<time>` matches the wall-clock window at processing time; the burst child
+       fires at a LOWER threshold (15/1h) than the daytime download rule 100051
+       (50/24h). Business-hours window assumed 08:00–18:00 local. -->
+  <rule id="100093" level="6">
+    <if_sid>100050</if_sid>
+    <time>6:00 pm - 8:00 am</time>
+    <description>Slack: off-hours file download by $(slack.actor.id)</description>
+    <group>slack,insider_threat,off_hours,audit,</group>
+  </rule>
+
+  <rule id="100094" level="12" frequency="15" timeframe="3600">
+    <if_matched_sid>100093</if_matched_sid>
+    <same_field>slack.actor.id</same_field>
+    <description>Slack: $(slack.actor.id) downloaded 15+ files off-hours in 1h (lowered-threshold insider burst)</description>
+    <group>slack,exfil,insider_threat,off_hours,audit,</group>
+  </rule>
+
 </group>

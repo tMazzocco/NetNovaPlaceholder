@@ -24,7 +24,10 @@ Slack (Events / Audit / Web)
                                        └─────────┘
 ```
 
-Pluggable sinks: `UnixSocketSink` (manager-side, native protocol), `JsonFileSink` (agent-side via `localfile`), `StdoutSink` (dev).
+Pluggable sinks: `UnixSocketSink` (manager-side, native protocol; reconnects if
+analysisd restarts and auto-replays its spool), `JsonFileSink` (agent-side via
+`localfile`), `StdoutSink` (dev). Sources that die (e.g. the Socket Mode
+listener dropping) are restarted by the supervisor with exponential backoff.
 
 ---
 
@@ -120,7 +123,7 @@ docker compose up --build -d
 |---|---|
 | Indexer needs `vm.max_map_count` | run **before** up: `wsl -d docker-desktop sysctl -w vm.max_map_count=262144` (else indexer crash-loops) |
 | RAM | indexer JVM is `-Xms1g -Xmx1g`; give WSL2 ≥ 4 GB in `.wslconfig` |
-| CRLF line endings | keep all `config/**` files LF — Windows editors inject CRLF → containers choke on parse |
+| CRLF line endings | `.gitattributes` pins all mounted config files to LF (CRLF makes the dashboard auth to the indexer with `kibanaserver\r` → "unable to connect to the indexer"). If files were checked out CRLF before the pin, run `git checkout -- .` after pulling |
 | Cert filenames | the generator emits `wazuh.manager.pem`, `wazuh.indexer.pem`, etc.; compose mounts expect exactly those — don't rename |
 | First boot slow | indexer security-index init takes ~1–2 min; dashboard returns 503 until the indexer is green |
 | Default passwords | `SecretPassword` / `kibanaserver` are demo-only — change before any non-PoC use |
@@ -153,7 +156,7 @@ Create an app at api.slack.com/apps, install to workspace. Required scopes:
 
 **User scopes (`xoxp-`, Enterprise Grid only):**
 - `auditlogs:read` — Audit Logs API. Install the app **org-wide** with **Org Owner** approval; the resulting user token must be **separate from the bot token**.
-- `admin` — only if you enable the `access_logs` source (`team.accessLogs`). The installing user must be a Workspace Admin/Owner. (See known issue below — the code currently sends the bot token here.)
+- `admin` — only if you enable the `access_logs` source (`team.accessLogs`). The installing user must be a Workspace Admin/Owner. The connector sends this **user** token to `team.accessLogs` (Gap 6 fixed).
 
 **Socket Mode app-level token (`xapp-`):**
 - `connections:write`
@@ -164,15 +167,20 @@ Subscribe to events: `message.channels`, `message.groups`, `message.im`, `file_s
 
 ### Known issues
 
-- **`access_logs` source is non-functional as shipped.** `team.accessLogs` needs
-  the `admin` scope on a user token, but `AccessLogsPoller` is built with the bot
-  token, so Slack returns `not_allowed_token_type`. Keep `access_logs.enabled:
-  false` until fixed. The Audit Logs API covers login + IP/geo data anyway.
-  Tracked as Gap 6 in `INSIDER-THREAT-GAPS.md`.
-- **Prod/example config drops most audit actions.** `filters.audit.allow` in
-  `wazuh-slack.example.yaml` is a tight allow-list, so live audit actions like
-  `user_created` / `role_assigned` / `org_app_*` are filtered out before Wazuh.
-  Widen it for full insider-threat coverage — Gap 1 in `INSIDER-THREAT-GAPS.md`.
+- **`access_logs` source now uses the user token (Gap 6 fixed).** `team.accessLogs`
+  needs the `admin` scope on a **user** token (`xoxp-`); the poller and supervisor
+  were switched from the bot token, so `access_logs.enabled: true` works with a
+  user token carrying `admin`. The Audit Logs API still carries richer login +
+  IP/geo data, so this source remains optional.
+- **`filters.audit.allow` is still a whitelist — keep it in sync with the rules.**
+  The example allow-list passes every action the shipped rules match (including
+  `channel_created_external_shared` / `guest_created` for 100074/100075 and the
+  insider-threat set `anomaly`, `export_*`, `*_exported`, `user_login`, …), but
+  any audit action you add a rule for must also be added here or it is dropped
+  before Wazuh (Gap 1).
+- **TLS certs are no longer committed.** `config/wazuh_indexer_ssl_certs/` is
+  gitignored; a fresh clone must run the cert generator (Quickstart step 1)
+  before `docker compose up`.
 
 ---
 
@@ -201,6 +209,10 @@ docker compose exec wazuh.manager tail -f /var/ossec/logs/alerts/alerts.json
 | `channel-recon` | 25× `member_joined_channel`, one actor | `100011` (level 10) |
 | `file-exfil` | 25× `file_shared` + 6× `file_public`, one actor | `100021` + `100026` (level 12) |
 | `replit` | 55× audit `file_downloaded`, one actor | `100051` (level 12) |
+| `anomaly` | 1× audit `anomaly` | `100080` (level 12) |
+| `export` | 1× `export_started` + 1× `organization_exported` | `100081` + `100083` (level 12/13) |
+| `login-geo` | 1× audit `user_login` from untrusted IP + country | `100091` + `100092` (level 10/8) |
+| `off-hours` | 16× audit `file_downloaded` | `100093` + `100094` (level 6/12, off-hours window only) |
 
 The `replit` scenario reproduces the headline insider pattern on synthetic
 **Enterprise audit** signal — proving the correlation rule works today; on a real
@@ -280,6 +292,7 @@ project-a/
 │  └─ logtest.ps1                single-event wazuh-logtest check
 ├─ wazuh-rules/0500-slack-rules.xml
 ├─ wazuh-decoders/0501-slack-decoder.xml
+├─ wazuh-lists/                  CDB allow-lists (trusted networks, allowed countries)
 └─ deploy/
    ├─ systemd/wazuh-slack.service
    ├─ ossec.conf.wodle.snippet
@@ -299,7 +312,8 @@ project-a/
 | 4 — Wazuh rules (≥15) + decoder | ✅ |
 | 5 — Observability (Prometheus exporter, tier probe, `/healthz`) | ✅ |
 | 6 — E2E docker-compose (full stack) + demo scripts | ✅ |
-| 7 — `team.accessLogs` + `WebInventoryPoller` sources | ⚠️ `WebInventoryPoller` ✅; `team.accessLogs` blocked (bot-token bug, Gap 6) |
+| 7 — `team.accessLogs` + `WebInventoryPoller` sources | ✅ `WebInventoryPoller` + `team.accessLogs` (user-token fix, Gap 6) |
+| 8 — Insider-threat detection gaps 1–6 (anomaly, export, login-geo CDB, off-hours, filter) | ✅ rules 100080–100094, `wazuh-lists/` |
 
 **Live verification (2026-06-09):** events, audit, and web_inventory confirmed
 working end-to-end against a real **Enterprise Grid** org (`tier: Enterprise`,

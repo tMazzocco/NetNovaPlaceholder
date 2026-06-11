@@ -1,0 +1,8 @@
+# CDB list: allowed login countries for Slack access-logs (INSIDER-THREAT-GAPS.md Gap 4).
+# Format: <country-code>:<label>. Looked up by rule 100092 via
+#   <list field="slack.context.location" lookup="not_match_key">
+# so a `user_login` whose country (access-logs `country` field) is NOT listed alerts.
+# Country codes match Slack team.accessLogs `country` values (ISO 3166-1 alpha-2).
+US:allowed
+FR:allowed
+GB:allowed

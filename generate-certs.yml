@@ -4,6 +4,13 @@
 #   docker compose -f generate-certs.yml run --rm generator
 #
 # Writes certs into config/wazuh_indexer_ssl_certs/.
+#
+# NOTE: the stock entrypoint does `chmod -R 500 /certificates` and only THEN
+# `cp root-ca.pem root-ca-manager.pem`. On native Linux in-container root bypasses
+# the missing dir write bit, but Docker Desktop's Windows/macOS bind mount
+# (grpcfuse/virtiofs) does not, so that cp fails with "Permission denied". We
+# re-assert write on the mount and re-create the two root-ca-manager files
+# ourselves after the stock script, so it works on every host.
 services:
   generator:
     image: wazuh/wazuh-certs-generator:0.0.2
@@ -11,4 +18,19 @@ services:
     volumes:
       - ./config/wazuh_indexer_ssl_certs/:/certificates/
       - ./config/certs.yml:/config/certs.yml
-    entrypoint: sh -c "/entrypoint.sh; chown -R 1000:1000 /certificates"
+    entrypoint:
+      - bash
+      - -c
+      - |
+        # Make the mount writable first: a prior run leaves the dir at 500 and
+        # files at 400, and grpcfuse/virtiofs won't let container-root override
+        # them, so the stock `cp` into /certificates would fail on a re-run.
+        chmod -R 777 /certificates || true
+        /entrypoint.sh
+        # Re-create the two root-ca-manager files the stock script fails to copy
+        # (it chmods the dir to 500 before this cp — fine on Linux, not on a
+        # Docker Desktop bind mount).
+        chmod -R u+w /certificates
+        cp -f /certificates/root-ca.pem /certificates/root-ca-manager.pem
+        cp -f /certificates/root-ca.key /certificates/root-ca-manager.key
+        chown -R 1000:1000 /certificates

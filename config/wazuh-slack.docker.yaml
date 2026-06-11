@@ -12,8 +12,9 @@ filters:
   events:
     allow:
       - field: slack.action
-        in: [tokens_revoked, app_uninstalled, file_public, member_joined_channel,
-             channel_created, subteam_created, team_join, file_shared]
+        in: [tokens_revoked, app_installed, app_uninstalled, file_public,
+             member_joined_channel, channel_created, subteam_created, team_join,
+             file_shared]
 
 severity_map:
   mfa_disabled:             critical

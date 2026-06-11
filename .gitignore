@@ -1,5 +1,4 @@
 /target
-/Cargo.lock
 *.swp
 .env
 .env.*
@@ -8,3 +7,8 @@
 /state.db
 /state.db-*
 /var
+/events.ndjson*
+
+# TLS material is generated per-deployment (docker compose -f generate-certs.yml
+# run --rm generator) and must never be committed.
+/config/wazuh_indexer_ssl_certs/

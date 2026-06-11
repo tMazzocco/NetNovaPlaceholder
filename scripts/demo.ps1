@@ -15,9 +15,15 @@
   channel-recon   25x member_joined_channel (1 actor)     100011  (level 10)
   file-exfil      25x file_shared + 6x file_public        100021 + 100026
   replit          55x file_downloaded source=audit        100051  (level 12)
+  anomaly         1x audit anomaly                        100080  (level 12)
+  export          1x export_started + 1x organization_exported  100081 + 100083
+  login-geo       1x user_login from untrusted IP+country 100091 + 100092
+  off-hours       16x file_downloaded source=audit        100093 + 100094*
+                  (* off-hours rules only fire when the manager processes the
+                   burst inside the 18:00-08:00 window — see Gap 5)
 
 .PARAMETER Scenario
-  channel-recon | file-exfil | replit | all
+  channel-recon | file-exfil | replit | anomaly | export | login-geo | off-hours | all
 
 .PARAMETER Target
   docker  -> pipe into the wazuh.manager container's localfile (default)
@@ -29,7 +35,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('channel-recon', 'file-exfil', 'replit', 'all')]
+    [ValidateSet('channel-recon', 'file-exfil', 'replit', 'anomaly', 'export', 'login-geo', 'off-hours', 'all')]
     [string]$Scenario = 'all',
 
     [ValidateSet('docker', 'local')]
@@ -50,17 +56,26 @@ function New-SlackEvent {
         [string]$EntityType = 'channel',
         [string]$EntityId = 'C_DEMO',
         [string]$Severity = 'low',
+        [string]$Ip,            # optional slack.context.ip   (login-geo)
+        [string]$Country,       # optional slack.context.location (login-geo)
         [datetime]$When = (Get-Date).ToUniversalTime()
     )
+    $slack = [ordered]@{
+        source   = $Source
+        action   = $Action
+        event_id = "demo-" + [guid]::NewGuid().ToString('N')
+        actor    = [ordered]@{ type = 'user'; id = $ActorId }
+        entity   = [ordered]@{ type = $EntityType; id = $EntityId }
+    }
+    if ($Ip -or $Country) {
+        $ctx = [ordered]@{}
+        if ($Ip)      { $ctx.ip = $Ip }
+        if ($Country) { $ctx.location = $Country }
+        $slack.context = $ctx
+    }
     $evt = [ordered]@{
         '@timestamp' = $When.ToString("yyyy-MM-ddTHH:mm:ssZ")
-        slack        = [ordered]@{
-            source   = $Source
-            action   = $Action
-            event_id = "demo-" + [guid]::NewGuid().ToString('N')
-            actor    = [ordered]@{ type = 'user'; id = $ActorId }
-            entity   = [ordered]@{ type = $EntityType; id = $EntityId }
-        }
+        slack        = $slack
         severity     = $Severity
         raw          = [ordered]@{ demo = $true }
     }
@@ -101,6 +116,36 @@ function Get-ScenarioLines {
                             -ActorId $Actor -EntityType file -EntityId ("F_DL_{0:D3}" -f $_) -Severity medium) )
             }
         }
+        'anomaly' {
+            # Gap 2: Slack's own anomaly audit action -> 100080 (level 12)
+            $lines.Add( (New-SlackEvent -Source audit -Action anomaly `
+                        -ActorId $Actor -EntityType workspace -EntityId 'T_DEMO' -Severity high) )
+        }
+        'export' {
+            # Gap 3: data/workspace/org export -> 100081 (level 12) + 100083 (level 13)
+            $lines.Add( (New-SlackEvent -Source audit -Action export_started `
+                        -ActorId $Actor -EntityType workspace -EntityId 'T_DEMO' -Severity high) )
+            $lines.Add( (New-SlackEvent -Source audit -Action organization_exported `
+                        -ActorId $Actor -EntityType workspace -EntityId 'E_DEMO' -Severity critical) )
+        }
+        'login-geo' {
+            # Gap 4: login from an IP + country outside the CDB allow-lists
+            #   -> 100091 (untrusted IP, level 10) + 100092 (untrusted country, level 8).
+            # 192.0.2.10 (TEST-NET-1) and RU are absent from the shipped CDB lists.
+            $lines.Add( (New-SlackEvent -Source audit -Action user_login `
+                        -ActorId $Actor -EntityType workspace -EntityId 'T_DEMO' -Severity low `
+                        -Ip '192.0.2.10' -Country 'RU') )
+        }
+        'off-hours' {
+            # Gap 5: off-hours download burst -> 100093 (base) + 100094 (>=15 / 1h).
+            # NOTE: the <time> guard means 100093/100094 only fire if the manager
+            # processes these inside 18:00-08:00 local; outside that window only the
+            # daytime base rule 100050 matches.
+            1..16 | ForEach-Object {
+                $lines.Add( (New-SlackEvent -Source audit -Action file_downloaded `
+                            -ActorId $Actor -EntityType file -EntityId ("F_OH_{0:D3}" -f $_) -Severity medium) )
+            }
+        }
     }
     return $lines
 }
@@ -125,7 +170,9 @@ function Send-Lines {
 }
 
 # --- run ---------------------------------------------------------------------
-$scenarios = if ($Scenario -eq 'all') { @('channel-recon', 'file-exfil', 'replit') } else { @($Scenario) }
+$scenarios = if ($Scenario -eq 'all') {
+    @('channel-recon', 'file-exfil', 'replit', 'anomaly', 'export', 'login-geo', 'off-hours')
+} else { @($Scenario) }
 
 foreach ($s in $scenarios) {
     Write-Host "[demo] scenario: $s (actor=$Actor, target=$Target)"

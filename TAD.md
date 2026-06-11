@@ -350,20 +350,20 @@ decoder+rule chain (no Slack needed); `scripts/logtest.ps1` does single-event
 
 ## 15. Known issues & roadmap
 
-Tracked in `INSIDER-THREAT-GAPS.md`:
-1. **Gap 1** — prod/example `filters.audit.allow` whitelist drops most live audit
-   actions; widen it. *(Do first — it gates the rest.)*
-2. **Gap 2** — no rule for Slack's own `anomaly` audit action (high-value, low-effort).
-3. **Gap 3** — no data/workspace-export detection.
-4. **Gap 4** — login IP/geo anomaly: `context` captured but no rule reads it.
-5. **Gap 5** — no off-hours burst rules.
-6. **Gap 6** — `access_logs` source sends the **bot** token to `team.accessLogs`
-   (`supervisor.rs`); Slack rejects with `not_allowed_token_type`. Switch to the
-   user token. Lower priority — Audit Logs already covers login + IP/geo.
+Tracked in `INSIDER-THREAT-GAPS.md` — **all six closed (2026-06-10):**
+1. **Gap 1** ✅ — `filters.audit.allow` widened to pass `anomaly` / export / login
+   actions (still a whitelist — keep in sync with rules).
+2. **Gap 2** ✅ — rule 100080 matches the `anomaly` audit action.
+3. **Gap 3** ✅ — rules 100081–100083 cover `export_*` / `*_exported`.
+4. **Gap 4** ✅ — rules 100090–100092 read `slack.context.ip` / `.location` against
+   CDB allow-lists in `wazuh-lists/` (impossible-travel still out of scope).
+5. **Gap 5** ✅ — rules 100093–100094 add an off-hours `<time>`-gated download burst
+   at a lower threshold than 100051.
+6. **Gap 6** ✅ — `AccessLogsPoller` + `supervisor.rs` now use `token_user`.
 
 Build status (PoC): bootstrap, sources, filter/normalizer, sinks, rules+decoder,
-observability, and docker-compose E2E are complete; `WebInventoryPoller` works;
-`team.accessLogs` blocked by Gap 6.
+observability, and docker-compose E2E are complete; `WebInventoryPoller` and
+`team.accessLogs` (user token) both work; insider-threat gaps 1–6 implemented.
 
 ---
 

@@ -10,9 +10,10 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 
 /// Low-frequency Web API inventory snapshot. Picks up things the Events
-/// API doesn't push: full user list, channel list, current admin app
-/// approvals. Useful for diffing against prior snapshots to catch silently
-/// added integrations or guest accounts.
+/// API doesn't push: workspace user/channel population and its security-
+/// relevant breakdown (admins, bots, guests). Emits bounded counts only —
+/// full member/channel lists on a large workspace blow past analysisd's
+/// per-line log limit when ingested via `<localfile>`.
 pub struct WebInventoryPoller {
     pub bot_token: String,
     pub poll_interval: Duration,
@@ -67,11 +68,15 @@ impl WebInventoryPoller {
             .await
             .unwrap_or_default();
 
+        let flag = |u: &Value, key: &str| u.get(key).and_then(Value::as_bool).unwrap_or(false);
         let snapshot = json!({
             "users_count": users.len(),
+            "users_admins": users.iter().filter(|u| flag(u, "is_admin") || flag(u, "is_owner")).count(),
+            "users_bots": users.iter().filter(|u| flag(u, "is_bot")).count(),
+            "users_guests": users.iter().filter(|u| flag(u, "is_restricted") || flag(u, "is_ultra_restricted")).count(),
+            "users_deleted": users.iter().filter(|u| flag(u, "deleted")).count(),
             "channels_count": channels.len(),
-            "users": users,
-            "channels": channels,
+            "channels_shared": channels.iter().filter(|c| flag(c, "is_shared") || flag(c, "is_ext_shared")).count(),
         });
 
         let ts = Utc::now();

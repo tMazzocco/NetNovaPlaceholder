@@ -1,3 +1,4 @@
+use crate::dedup::DedupCache;
 use crate::normalize::normalize_audit_payload;
 use crate::state::StateStore;
 use async_trait::async_trait;
@@ -10,11 +11,17 @@ use tokio::sync::{mpsc, watch};
 /// Polls Slack's Audit Logs API (Enterprise Grid only) and forwards entries
 /// as NormalizedEvents. Cursor + last-seen-date persisted via [`StateStore`]
 /// so restarts resume from the same point.
+///
+/// The API's `oldest` parameter is **inclusive**, so entries sitting exactly on
+/// the persisted boundary are re-fetched every poll; `dedup` drops them before
+/// they reach the sink (otherwise a quiet org re-emits its newest event each
+/// poll and inflates Wazuh frequency rules into false alerts).
 pub struct AuditPoller {
     pub user_token: String,
     pub poll_interval: Duration,
     pub state: StateStore,
     pub http: Client,
+    dedup: DedupCache,
 }
 
 const STATE_KEY_OLDEST: &str = "audit.oldest";
@@ -31,6 +38,7 @@ impl AuditPoller {
                 .timeout(Duration::from_secs(30))
                 .build()
                 .expect("reqwest client builds"),
+            dedup: DedupCache::new(10_000),
         }
     }
 
@@ -40,7 +48,7 @@ impl AuditPoller {
             .get(STATE_KEY_OLDEST)?
             .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or_else(|| chrono::Utc::now().timestamp() - 24 * 3600);
-        let mut cursor = self.state.get(STATE_KEY_CURSOR)?;
+        let mut cursor = self.state.get(STATE_KEY_CURSOR)?.filter(|s| !s.is_empty());
         let mut newest_seen = oldest;
 
         loop {
@@ -91,6 +99,13 @@ impl AuditPoller {
                 if let Some(ts) = entry.get("date_create").and_then(Value::as_i64) {
                     if ts > newest_seen {
                         newest_seen = ts;
+                    }
+                }
+                // `oldest` is inclusive: boundary entries come back on every
+                // poll. Drop anything already forwarded.
+                if let Some(id) = entry.get("id").and_then(Value::as_str) {
+                    if !self.dedup.record(id) {
+                        continue;
                     }
                 }
                 match normalize_audit_payload(entry) {

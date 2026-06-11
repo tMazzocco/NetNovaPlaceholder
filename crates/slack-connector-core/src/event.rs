@@ -78,9 +78,10 @@ pub struct SlackContext {
     pub location: Option<Value>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
+    #[default]
     Info,
     Low,
     Medium,
@@ -88,22 +89,20 @@ pub enum Severity {
     Critical,
 }
 
-impl Default for Severity {
-    fn default() -> Self {
-        Severity::Info
-    }
-}
-
 impl NormalizedEvent {
     /// Extract a dotted-path field for filter matching.
     /// Supports `slack.action`, `slack.actor.email`, `severity`, `raw.<...>`, etc.
+    ///
+    /// Serializes the whole event per call — when matching several rules
+    /// against one event, serialize once with [`serde_json::to_value`] and use
+    /// [`lookup_dotted`] instead.
     pub fn lookup(&self, path: &str) -> Option<Value> {
         let v = serde_json::to_value(self).ok()?;
         lookup_dotted(&v, path).cloned()
     }
 }
 
-fn lookup_dotted<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
+pub fn lookup_dotted<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
     let mut cur = v;
     for part in path.split('.') {
         cur = cur.get(part)?;

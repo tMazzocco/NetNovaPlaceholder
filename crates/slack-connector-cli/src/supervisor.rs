@@ -5,6 +5,7 @@ use slack_connector_core::{
     WazuhSink,
 };
 use slack_sources::{StateStore, Tier, TierProbe};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
@@ -63,17 +64,10 @@ pub async fn run_supervisor(cfg: Config) -> anyhow::Result<()> {
     }
     health.mark_started(sources.len() as u64);
     let mut source_handles = Vec::new();
-    for src in sources {
+    for factory in sources {
         let tx = tx.clone();
         let shutdown_rx = shutdown_rx.clone();
-        let kind = src.kind();
-        let h = tokio::spawn(async move {
-            tracing::info!(?kind, "source starting");
-            if let Err(e) = src.run(tx, shutdown_rx).await {
-                tracing::error!(?kind, error = %e, "source exited with error");
-            }
-        });
-        source_handles.push(h);
+        source_handles.push(tokio::spawn(run_source_supervised(factory, tx, shutdown_rx)));
     }
     drop(tx);
 
@@ -160,28 +154,74 @@ async fn build_sink(cfg: &SinkConfig) -> anyhow::Result<Arc<dyn WazuhSink>> {
 }
 
 fn build_filter(cfg: &Config) -> FilterEngine {
-    let mut engine = FilterEngine::default();
-    engine.global_drop = cfg.filters.drop.clone();
-    insert_allow(&mut engine, "audit", &cfg.filters.audit.allow);
-    insert_allow(&mut engine, "events", &cfg.filters.events.allow);
-    insert_allow(&mut engine, "accesslogs", &cfg.filters.access_logs.allow);
-    insert_allow(&mut engine, "webinventory", &cfg.filters.web_inventory.allow);
-    engine.severity_map = cfg.severity_map.clone();
-    engine
-}
-
-fn insert_allow(engine: &mut FilterEngine, key: &str, rules: &[FilterRule]) {
-    if !rules.is_empty() {
-        engine.per_source_allow.insert(key.to_string(), rules.to_vec());
+    let mut per_source_allow = HashMap::new();
+    insert_allow(&mut per_source_allow, "audit", &cfg.filters.audit.allow);
+    insert_allow(&mut per_source_allow, "events", &cfg.filters.events.allow);
+    insert_allow(&mut per_source_allow, "accesslogs", &cfg.filters.access_logs.allow);
+    insert_allow(&mut per_source_allow, "webinventory", &cfg.filters.web_inventory.allow);
+    FilterEngine {
+        global_drop: cfg.filters.drop.clone(),
+        per_source_allow,
+        severity_map: cfg.severity_map.clone(),
     }
 }
 
-fn build_sources(cfg: &Config, state: &StateStore, probe: Option<&TierProbe>) -> Vec<Box<dyn LogSource>> {
-    let mut out: Vec<Box<dyn LogSource>> = Vec::new();
+fn insert_allow(map: &mut HashMap<String, Vec<FilterRule>>, key: &str, rules: &[FilterRule]) {
+    if !rules.is_empty() {
+        map.insert(key.to_string(), rules.to_vec());
+    }
+}
+
+/// Rebuildable source constructor — sources are consumed by `run()`, so the
+/// supervised restart loop needs a way to make a fresh instance after a crash.
+type SourceFactory = Box<dyn Fn() -> Box<dyn LogSource> + Send>;
+
+/// Runs a source, restarting it with exponential backoff if it exits while the
+/// connector is not shutting down (e.g. the Socket Mode listener dying on a
+/// network blip). Backoff resets after a stable run.
+async fn run_source_supervised(
+    factory: SourceFactory,
+    tx: mpsc::Sender<NormalizedEvent>,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
+    const BACKOFF_START: Duration = Duration::from_secs(1);
+    const BACKOFF_MAX: Duration = Duration::from_secs(300);
+    const STABLE_RUN: Duration = Duration::from_secs(300);
+
+    let mut backoff = BACKOFF_START;
+    loop {
+        let src = factory();
+        let kind = src.kind();
+        tracing::info!(?kind, "source starting");
+        let started = std::time::Instant::now();
+        let result = src.run(tx.clone(), shutdown_rx.clone()).await;
+        if *shutdown_rx.borrow() {
+            return;
+        }
+        match result {
+            Ok(()) => tracing::warn!(?kind, "source exited without shutdown signal"),
+            Err(e) => tracing::error!(?kind, error = %e, "source exited with error"),
+        }
+        if started.elapsed() >= STABLE_RUN {
+            backoff = BACKOFF_START;
+        }
+        tracing::warn!(?kind, backoff_s = backoff.as_secs(), "restarting source after backoff");
+        tokio::select! {
+            _ = tokio::time::sleep(backoff) => {}
+            _ = shutdown_rx.changed() => return,
+        }
+        backoff = backoff.saturating_mul(2).min(BACKOFF_MAX);
+    }
+}
+
+fn build_sources(cfg: &Config, state: &StateStore, probe: Option<&TierProbe>) -> Vec<SourceFactory> {
+    let mut out: Vec<SourceFactory> = Vec::new();
 
     if cfg.slack.sources.events.enabled {
         if let (Some(app), Some(bot)) = (cfg.slack.token_app.clone(), cfg.slack.token_bot.clone()) {
-            out.push(Box::new(slack_sources::EventsSocketSource::new(app, bot)));
+            out.push(Box::new(move || {
+                Box::new(slack_sources::EventsSocketSource::new(app.clone(), bot.clone()))
+            }));
         } else {
             tracing::warn!("events enabled but token_app or token_bot missing — skipping");
         }
@@ -192,7 +232,10 @@ fn build_sources(cfg: &Config, state: &StateStore, probe: Option<&TierProbe>) ->
         match (cfg.slack.token_user.clone(), allowed) {
             (Some(tok), true) => {
                 let interval = Duration::from_secs(cfg.slack.sources.audit.poll_seconds.max(15));
-                out.push(Box::new(slack_sources::AuditPoller::new(tok, interval, state.clone())));
+                let state = state.clone();
+                out.push(Box::new(move || {
+                    Box::new(slack_sources::AuditPoller::new(tok.clone(), interval, state.clone()))
+                }));
             }
             (None, _) => tracing::warn!("audit enabled but token_user (xoxp-) missing — skipping"),
             (_, false) => tracing::warn!("audit enabled but probe reports it unavailable on this tier — skipping"),
@@ -201,14 +244,20 @@ fn build_sources(cfg: &Config, state: &StateStore, probe: Option<&TierProbe>) ->
 
     if cfg.slack.sources.access_logs.enabled {
         let allowed = probe.map(|p| p.access_logs_available).unwrap_or(true);
-        match (cfg.slack.token_bot.clone(), allowed) {
+        // `team.accessLogs` needs a USER token (xoxp- with `admin`); a bot token is
+        // rejected with `not_allowed_token_type` (INSIDER-THREAT-GAPS.md Gap 6).
+        match (cfg.slack.token_user.clone(), allowed) {
             (Some(tok), true) => {
                 let interval = Duration::from_secs(cfg.slack.sources.access_logs.poll_seconds.max(60));
-                out.push(Box::new(slack_sources::AccessLogsPoller::with_backfill(
-                    tok, interval, state.clone(), cfg.slack.backfill_days,
-                )));
+                let state = state.clone();
+                let backfill_days = cfg.slack.backfill_days;
+                out.push(Box::new(move || {
+                    Box::new(slack_sources::AccessLogsPoller::with_backfill(
+                        tok.clone(), interval, state.clone(), backfill_days,
+                    ))
+                }));
             }
-            (None, _) => tracing::warn!("access_logs enabled but token_bot missing — skipping"),
+            (None, _) => tracing::warn!("access_logs enabled but token_user (xoxp- with admin scope) missing — skipping"),
             (_, false) => match probe.map(|p| p.tier) {
                 Some(Tier::Free) => tracing::warn!("access_logs unavailable on Free tier — skipping"),
                 _ => tracing::warn!("access_logs unavailable on this workspace — skipping"),
@@ -219,7 +268,10 @@ fn build_sources(cfg: &Config, state: &StateStore, probe: Option<&TierProbe>) ->
     if cfg.slack.sources.web_inventory.enabled {
         if let Some(tok) = cfg.slack.token_bot.clone() {
             let interval = Duration::from_secs(cfg.slack.sources.web_inventory.poll_seconds.max(300));
-            out.push(Box::new(slack_sources::WebInventoryPoller::new(tok, interval, state.clone())));
+            let state = state.clone();
+            out.push(Box::new(move || {
+                Box::new(slack_sources::WebInventoryPoller::new(tok.clone(), interval, state.clone()))
+            }));
         } else {
             tracing::warn!("web_inventory enabled but token_bot missing — skipping");
         }

@@ -1,0 +1,26 @@
+# Everything the docker containers mount MUST stay LF — CRLF in mounted
+# YAML/conf makes the indexer security plugin and dashboard read values with a
+# trailing \r (e.g. password "kibanaserver\r") and auth between the services
+# breaks. Windows checkouts with core.autocrlf=true silently rewrite these
+# unless pinned here.
+* text=auto
+
+config/** text eol=lf
+wazuh-lists/** text eol=lf
+wazuh-rules/** text eol=lf
+wazuh-decoders/** text eol=lf
+deploy/** text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.conf text eol=lf
+*.pem text eol=lf
+*.key text eol=lf
+*.xml text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+.env.example text eol=lf
+
+# PowerShell scripts are fine with CRLF on Windows.
+*.ps1 text eol=crlf

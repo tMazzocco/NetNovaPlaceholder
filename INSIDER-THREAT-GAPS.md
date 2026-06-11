@@ -1,9 +1,14 @@
-# Insider-Threat Detection — Gap Plan (to implement later)
+# Insider-Threat Detection — Gap Plan
 
 Threat model: the "Replit pattern" — a privileged insider, over a short window,
 accessing/pulling large volumes of data, often off-hours and from unusual
 context. This file lists the detection gaps and the concrete changes to close
-them. Nothing here is implemented yet.
+them.
+
+> **Status (2026-06-10): all six gaps implemented.** Rules 100080–100094 added,
+> the audit allow-list widened, CDB allow-lists shipped under `wazuh-lists/`, the
+> `access_logs` token bug fixed, and `scripts/demo.ps1` extended with
+> `anomaly` / `export` / `login-geo` / `off-hours` scenarios. Per-gap notes below.
 
 Scope note: `auditlogs:read` (user token, org-installed) is the single unlock.
 The normalizer (`crates/slack-sources/src/normalize.rs`) is already generic and
@@ -12,7 +17,7 @@ action, so no new Slack scopes are required for the items below.
 
 ---
 
-## Gap 1 — Audit filter allow-list starves new rules (do this FIRST)
+## Gap 1 — Audit filter allow-list starves new rules ✅ DONE
 
 **Problem:** `config/wazuh-slack.example.yaml` `filters.audit.allow` is an
 allow-list of ~10 actions. Anything not listed is dropped before reaching Wazuh,
@@ -33,7 +38,7 @@ reaches the sink (not counted in `wsc_events_filtered_total`).
 
 ---
 
-## Gap 2 — Surface Slack's own anomaly detection (`anomaly` action)
+## Gap 2 — Surface Slack's own anomaly detection (`anomaly` action) ✅ DONE — rule 100080
 
 **Problem:** Slack Enterprise runs its own anomaly detection (excessive
 downloads, suspicious login, token theft) and emits audit `action: anomaly`.
@@ -50,7 +55,7 @@ Consider mapping anomaly sub-types from `raw` into the description.
 
 ---
 
-## Gap 3 — Data / workspace export detection
+## Gap 3 — Data / workspace export detection ✅ DONE — rules 100081–100083
 
 **Problem:** a privileged user exporting a workspace is the loudest exfil
 signal and is currently invisible. Audit actions like `export_started`,
@@ -65,7 +70,7 @@ level 12–13. Treat org-level export as critical.
 
 ---
 
-## Gap 4 — Login context anomaly (new IP / geo)
+## Gap 4 — Login context anomaly (new IP / geo) ✅ DONE — rules 100090–100092 + `wazuh-lists/`
 
 **Problem:** the normalizer captures `slack.context.ip` and
 `slack.context.location` on audit events, but **no rule reads them**. New-IP /
@@ -86,7 +91,7 @@ alert; in-list logins stay silent.
 
 ---
 
-## Gap 5 — Off-hours activity burst
+## Gap 5 — Off-hours activity burst ✅ DONE — rules 100093–100094
 
 **Problem:** no time-of-day awareness. A download/share burst at 03:00 looks the
 same as midday.
@@ -103,7 +108,7 @@ threshold than the daytime rule (100051).
 
 ---
 
-## Gap 6 — `access_logs` source sends the wrong token (code fix)
+## Gap 6 — `access_logs` source sends the wrong token (code fix) ✅ DONE
 
 **Problem:** `crates/slack-connector-cli/src/supervisor.rs:204` builds
 `AccessLogsPoller` with `token_bot`; Slack rejects `team.accessLogs` for bot

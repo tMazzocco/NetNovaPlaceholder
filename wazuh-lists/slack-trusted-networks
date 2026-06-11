@@ -1,0 +1,8 @@
+# CDB list: trusted source networks for Slack logins (INSIDER-THREAT-GAPS.md Gap 4).
+# Format: <CIDR-or-IP>:<label>. Looked up by rule 100091 via
+#   <list field="slack.context.ip" lookup="not_address_match_key">
+# so a `user_login` from any IP NOT matched here raises an alert.
+# Replace the RFC-5737 documentation ranges below with your real office / VPN egress CIDRs.
+203.0.113.0/24:office-egress
+198.51.100.0/24:vpn-egress
+10.0.0.0/8:corp-internal

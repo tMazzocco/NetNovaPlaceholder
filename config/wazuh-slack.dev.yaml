@@ -2,7 +2,7 @@ slack:
   token_bot: "${SLACK_BOT_TOKEN}"
   token_app: "${SLACK_APP_TOKEN}"
   token_user: "${SLACK_USER_TOKEN}"
-  org_id: "E0AN66GDRRU"
+  # org_id: "E0XXXXXXXXX"   # parsed, reserved for future use — not required
   sources:
     audit:         { enabled: true, poll_seconds: 60 }
     events:        { enabled: true, mode: socket }   # set true once tokens provided
@@ -14,8 +14,9 @@ filters:
   events:
     allow:
       - field: slack.action
-        in: [tokens_revoked, app_uninstalled, file_public, member_joined_channel,
-             channel_created, subteam_created, team_join, file_shared]
+        in: [tokens_revoked, app_installed, app_uninstalled, file_public,
+             member_joined_channel, channel_created, subteam_created, team_join,
+             file_shared]
 
 severity_map:
   mfa_disabled:             critical

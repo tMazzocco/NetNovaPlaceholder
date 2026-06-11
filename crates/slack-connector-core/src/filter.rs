@@ -23,17 +23,26 @@ pub enum MatchOp {
 
 impl FilterRule {
     pub fn matches(&self, event: &NormalizedEvent) -> bool {
-        let v = event.lookup(&self.field);
+        match serde_json::to_value(event) {
+            Ok(root) => self.matches_value(&root),
+            Err(_) => false,
+        }
+    }
+
+    /// Match against a pre-serialized event so callers evaluating many rules
+    /// pay the serialization cost once.
+    pub fn matches_value(&self, root: &Value) -> bool {
+        let v = crate::event::lookup_dotted(root, &self.field);
         match (&self.op, v) {
             (MatchOp::Exists(true), Some(_)) => true,
             (MatchOp::Exists(false), None) => true,
             (MatchOp::Exists(_), _) => false,
             (_, None) => false,
-            (MatchOp::Eq(expected), Some(actual)) => &actual == expected,
-            (MatchOp::In(set), Some(actual)) => set.iter().any(|s| s == &actual),
+            (MatchOp::Eq(expected), Some(actual)) => actual == expected,
+            (MatchOp::In(set), Some(actual)) => set.iter().any(|s| s == actual),
             (MatchOp::RegexMatch(re), Some(actual)) => {
                 let actual_str = match actual {
-                    Value::String(s) => s,
+                    Value::String(s) => s.clone(),
                     other => other.to_string(),
                 };
                 Regex::new(re)
@@ -59,15 +68,18 @@ impl FilterEngine {
             event.severity = *sev;
         }
 
+        // Serialize once; every rule below matches against this snapshot.
+        let root = serde_json::to_value(&event).ok()?;
+
         // Global drop: any match → drop.
-        if self.global_drop.iter().any(|r| r.matches(&event)) {
+        if self.global_drop.iter().any(|r| r.matches_value(&root)) {
             return None;
         }
 
         // Per-source allow: if rules exist for this source, require at least one match.
         let source_key = format!("{:?}", event.slack.source).to_lowercase();
         if let Some(allow) = self.per_source_allow.get(&source_key) {
-            if !allow.is_empty() && !allow.iter().any(|r| r.matches(&event)) {
+            if !allow.is_empty() && !allow.iter().any(|r| r.matches_value(&root)) {
                 return None;
             }
         }

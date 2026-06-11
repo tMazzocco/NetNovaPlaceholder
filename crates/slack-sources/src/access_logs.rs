@@ -10,9 +10,13 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 
 /// Polls `team.accessLogs` for per-user login history. Paid tier (Pro+) only —
-/// Free workspaces return `paid_only`. Cursor = last-seen `date_first` epoch.
+/// Free workspaces return `paid_only`.
+///
+/// Requires a **user token** (`xoxp-`) carrying the `admin` scope: `team.accessLogs`
+/// rejects bot tokens with `not_allowed_token_type` (see INSIDER-THREAT-GAPS.md
+/// Gap 6). Cursor = last-seen `date_first` epoch.
 pub struct AccessLogsPoller {
-    pub bot_token: String,
+    pub user_token: String,
     pub poll_interval: Duration,
     pub state: StateStore,
     pub backfill_days: u64,
@@ -23,18 +27,18 @@ const STATE_KEY: &str = "access_logs.date_first";
 const URL: &str = "https://slack.com/api/team.accessLogs";
 
 impl AccessLogsPoller {
-    pub fn new(bot_token: String, poll_interval: Duration, state: StateStore) -> Self {
-        Self::with_backfill(bot_token, poll_interval, state, 90)
+    pub fn new(user_token: String, poll_interval: Duration, state: StateStore) -> Self {
+        Self::with_backfill(user_token, poll_interval, state, 90)
     }
 
     pub fn with_backfill(
-        bot_token: String,
+        user_token: String,
         poll_interval: Duration,
         state: StateStore,
         backfill_days: u64,
     ) -> Self {
         Self {
-            bot_token,
+            user_token,
             poll_interval,
             state,
             backfill_days,
@@ -59,7 +63,7 @@ impl AccessLogsPoller {
             let resp: Value = self
                 .http
                 .get(URL)
-                .bearer_auth(&self.bot_token)
+                .bearer_auth(&self.user_token)
                 .query(&[("count", "100"), ("page", &page.to_string())])
                 .send()
                 .await?
@@ -112,8 +116,10 @@ fn build_event(entry: &Value) -> NormalizedEvent {
     let date_first = entry.get("date_first").and_then(Value::as_i64).unwrap_or(0);
     let user_id = entry.get("user_id").and_then(Value::as_str).map(String::from);
     let username = entry.get("username").and_then(Value::as_str).map(String::from);
-    let count = entry.get("count").and_then(Value::as_i64).unwrap_or(0);
-    let action = if count > 0 { "user_login" } else { "user_login_failed" };
+    // team.accessLogs only records SUCCESSFUL logins (aggregated per
+    // user/IP/UA with count >= 1) — failed-login detection needs the audit
+    // source (`user_login_failed`, rules 100060/100061).
+    let action = "user_login";
 
     let event_id = format!("access-{}-{}", user_id.as_deref().unwrap_or("?"), date_first);
 

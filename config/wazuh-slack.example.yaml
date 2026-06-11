@@ -5,7 +5,7 @@ slack:
   token_bot:  "${SLACK_BOT_TOKEN}"   # xoxb-... (Events API + Web API)
   token_user: "${SLACK_USER_TOKEN}"  # xoxp-... (Audit Logs — Enterprise Grid only)
   token_app:  "${SLACK_APP_TOKEN}"   # xapp-... (Socket Mode)
-  org_id:     "E0AN66GDRRU"            # required for audit
+  org_id:     "E0XXXXXXXXX"            # your Enterprise Grid org ID (parsed, reserved for future use)
   sources:
     audit:         { enabled: true,  poll_seconds: 60 }
     events:        { enabled: true,  mode: socket }
@@ -19,23 +19,38 @@ filters:
     - field: slack.actor.email
       regex_match: ".*@bot\\.local$"
 
+  # NOTE: a non-empty allow-list is a WHITELIST — any audit action not listed is
+  # dropped before Wazuh. Keep this in sync with the rules in
+  # wazuh-rules/0500-slack-rules.xml or new detections silently starve
+  # (INSIDER-THREAT-GAPS.md Gap 1).
   audit:
     allow:
       - field: slack.action
         in: [user_login, user_login_failed, app_installed, app_uninstalled,
              file_public_link_created, file_downloaded, role_change_to_admin,
-             tokens_revoked, mfa_disabled, sso_disabled]
+             tokens_revoked, mfa_disabled, sso_disabled,
+             # external-exposure rules 100074/100075
+             channel_created_external_shared, guest_created,
+             # insider-threat extensions (Gaps 2–3): Slack anomaly + data export
+             anomaly, export_started, export_completed,
+             workspace_exported, organization_exported]
 
   events:
     allow:
       - field: slack.action
-        in: [tokens_revoked, app_uninstalled, file_public, member_joined_channel,
-             channel_created, subteam_created, team_join, file_shared]
+        in: [tokens_revoked, app_installed, app_uninstalled, file_public,
+             member_joined_channel, channel_created, subteam_created, team_join,
+             file_shared]
 
 severity_map:
   mfa_disabled:             critical
   sso_disabled:             critical
+  organization_exported:    critical
   role_change_to_admin:     high
+  anomaly:                  high
+  export_started:           high
+  export_completed:         high
+  workspace_exported:       high
   file_public_link_created: medium
   app_installed:            medium
   user_login_failed:        low
