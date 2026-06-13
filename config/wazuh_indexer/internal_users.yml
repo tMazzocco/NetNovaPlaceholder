@@ -10,7 +10,7 @@ _meta:
   config_version: 2
 
 admin:
-  hash: "$2y$12$K/SpwjtB.wOHJ/Nc6GVRDuc1h0rM1DfvziFRNPtBdHQRke3IH5Mhe"
+  hash: "$2y$12$u4/pdscr8ZQ12Bp7kVMt6ucSiCWF5WcnoQu2C6qKE1Gs.h/j2T91O"
   reserved: true
   backend_roles:
     - "admin"

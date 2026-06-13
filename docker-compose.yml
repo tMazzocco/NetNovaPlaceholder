@@ -56,12 +56,17 @@ services:
       - ./config/wazuh_indexer_ssl_certs/wazuh.manager.pem:/etc/ssl/filebeat.pem
       - ./config/wazuh_indexer_ssl_certs/wazuh.manager-key.pem:/etc/ssl/filebeat.key
       - ./config/wazuh_cluster/wazuh_manager.conf:/wazuh-config-mount/etc/ossec.conf
-      # custom Slack rules + decoder
-      - ./wazuh-rules/0500-slack-rules.xml:/var/ossec/etc/rules/0500-slack-rules.xml
-      - ./wazuh-decoders/0501-slack-decoder.xml:/var/ossec/etc/decoders/0501-slack-decoder.xml
+      # Custom Slack rules + decoder + CDB lists. These MUST be mounted under
+      # /wazuh-config-mount (not directly into /var/ossec/etc) — the entrypoint
+      # copies them into place AFTER the first-run seeding step. Mounting them
+      # straight into the wazuh_etc volume makes /var/ossec/etc non-empty before
+      # init, which makes mount_permanent_data() skip seeding etc/shared/ar.conf,
+      # so analysisd fails (1103) and the manager API never starts (dashboard 3099).
+      - ./wazuh-rules/0500-slack-rules.xml:/wazuh-config-mount/etc/rules/0500-slack-rules.xml
+      - ./wazuh-decoders/0501-slack-decoder.xml:/wazuh-config-mount/etc/decoders/0501-slack-decoder.xml
       # login-context CDB allow-lists (Gap 4 — rules 100091/100092)
-      - ./wazuh-lists/slack-trusted-networks:/var/ossec/etc/lists/slack-trusted-networks
-      - ./wazuh-lists/slack-allowed-countries:/var/ossec/etc/lists/slack-allowed-countries
+      - ./wazuh-lists/slack-trusted-networks:/wazuh-config-mount/etc/lists/slack-trusted-networks
+      - ./wazuh-lists/slack-allowed-countries:/wazuh-config-mount/etc/lists/slack-allowed-countries
       # shared NDJSON volume with the connector
       - slack-logs:/var/log/wazuh-slack
 

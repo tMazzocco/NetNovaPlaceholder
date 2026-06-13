@@ -5,32 +5,15 @@
   severity, raw). Wazuh's built-in JSON decoder handles field extraction;
   this file just attaches the `slack` decoder name and groups so rules can
   match on `<decoded_as>slack</decoded_as>`.
+
+  NOTE: there are deliberately NO per-source child decoders. The rules
+  differentiate sources via the JSON `slack.source` field (e.g.
+  `<field name="slack.source">audit</field>`), not via the decoder name. A
+  child decoder with <use_own_name>true</use_own_name> would override
+  `decoded_as` to `slack-<source>` and break rule 100000's
+  `<decoded_as>slack</decoded_as>` match.
 -->
 <decoder name="slack">
   <prematch>^{</prematch>
   <plugin_decoder>JSON_Decoder</plugin_decoder>
-</decoder>
-
-<decoder name="slack-audit">
-  <parent>slack</parent>
-  <use_own_name>true</use_own_name>
-  <program_name_pcre2>^slack-audit$</program_name_pcre2>
-</decoder>
-
-<decoder name="slack-events">
-  <parent>slack</parent>
-  <use_own_name>true</use_own_name>
-  <program_name_pcre2>^slack-events$</program_name_pcre2>
-</decoder>
-
-<decoder name="slack-access">
-  <parent>slack</parent>
-  <use_own_name>true</use_own_name>
-  <program_name_pcre2>^slack-access$</program_name_pcre2>
-</decoder>
-
-<decoder name="slack-inventory">
-  <parent>slack</parent>
-  <use_own_name>true</use_own_name>
-  <program_name_pcre2>^slack-inventory$</program_name_pcre2>
 </decoder>
