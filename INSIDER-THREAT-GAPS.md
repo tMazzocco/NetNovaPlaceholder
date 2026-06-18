@@ -91,7 +91,7 @@ alert; in-list logins stay silent.
 
 ---
 
-## Gap 5 — Off-hours activity burst ✅ DONE — rules 100093–100094
+## Gap 5 — Off-hours activity burst ✅ DONE — rule 100094
 
 **Problem:** no time-of-day awareness. A download/share burst at 03:00 looks the
 same as midday.

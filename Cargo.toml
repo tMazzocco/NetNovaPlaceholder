@@ -37,6 +37,7 @@ parking_lot = "0.12"
 url = "2"
 futures = "0.3"
 slack-morphism = { version = "2", default-features = false, features = ["hyper"] }
+tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 metrics = "0.24"
 metrics-exporter-prometheus = { version = "0.16", default-features = false, features = ["http-listener"] }

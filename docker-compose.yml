@@ -123,6 +123,7 @@ services:
     environment:
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
       SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
+      SLACK_USER_TOKEN: ${SLACK_USER_TOKEN}
     command: ["--config", "/etc/wazuh-slack/wazuh-slack.docker.yaml"]
     ports:
       - "9183:9183"   # Prometheus /metrics

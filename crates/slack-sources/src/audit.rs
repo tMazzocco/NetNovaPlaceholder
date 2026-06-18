@@ -50,6 +50,9 @@ impl AuditPoller {
             .unwrap_or_else(|| chrono::Utc::now().timestamp() - 24 * 3600);
         let mut cursor = self.state.get(STATE_KEY_CURSOR)?.filter(|s| !s.is_empty());
         let mut newest_seen = oldest;
+        let mut fetched = 0usize;
+        let mut forwarded = 0usize;
+        let mut deduped = 0usize;
 
         loop {
             let mut req = self
@@ -96,6 +99,7 @@ impl AuditPoller {
                 .unwrap_or_default();
 
             for entry in entries {
+                fetched += 1;
                 if let Some(ts) = entry.get("date_create").and_then(Value::as_i64) {
                     if ts > newest_seen {
                         newest_seen = ts;
@@ -105,6 +109,7 @@ impl AuditPoller {
                 // poll. Drop anything already forwarded.
                 if let Some(id) = entry.get("id").and_then(Value::as_str) {
                     if !self.dedup.record(id) {
+                        deduped += 1;
                         continue;
                     }
                 }
@@ -113,6 +118,7 @@ impl AuditPoller {
                         if tx.send(ev).await.is_err() {
                             return Ok(());
                         }
+                        forwarded += 1;
                     }
                     Err(e) => tracing::warn!(error = %e, "audit normalize failed"),
                 }
@@ -134,6 +140,14 @@ impl AuditPoller {
                     break;
                 }
             }
+        }
+        // Batch summary: how many audit entries this poll fetched, forwarded to
+        // the pipeline, and dropped as already-seen (the `oldest`-inclusive
+        // boundary re-fetch). `forwarded` is what actually reaches Wazuh.
+        if forwarded > 0 {
+            tracing::info!(fetched, forwarded, deduped, "audit batch forwarded to Wazuh pipeline");
+        } else if fetched > 0 {
+            tracing::debug!(fetched, deduped, "audit poll complete: nothing new (all deduped)");
         }
         Ok(())
     }

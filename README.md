@@ -212,7 +212,7 @@ docker compose exec wazuh.manager tail -f /var/ossec/logs/alerts/alerts.json
 | `anomaly` | 1× audit `anomaly` | `100080` (level 12) |
 | `export` | 1× `export_started` + 1× `organization_exported` | `100081` + `100083` (level 12/13) |
 | `login-geo` | 1× audit `user_login` from untrusted IP + country | `100091` + `100092` (level 10/8) |
-| `off-hours` | 16× audit `file_downloaded` | `100093` + `100094` (level 6/12, off-hours window only) |
+| `off-hours` | 16× audit `file_downloaded` | `100094` (level 12, off-hours window only) |
 
 The `replit` scenario reproduces the headline insider pattern on synthetic
 **Enterprise audit** signal — proving the correlation rule works today; on a real

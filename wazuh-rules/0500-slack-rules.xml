@@ -18,9 +18,14 @@
 -->
 <group name="slack,">
 
-  <!-- 100000 — base catch-all so child rules can use if_sid -->
+  <!-- 100000 — base catch-all so child rules can use if_sid.
+       Anchored on the presence of the `slack.source` field rather than the
+       decoder name: the JsonFileSink path (localfile log_format="json", used by
+       the docker stack and agent file-tail) decodes events with Wazuh's built-in
+       `json` decoder, while the UnixSocketSink path decodes them as `slack`.
+       Matching the field works for both. -->
   <rule id="100000" level="0">
-    <decoded_as>slack</decoded_as>
+    <field name="slack.source" type="pcre2">\w+</field>
     <description>Slack: event ingested</description>
   </rule>
 
@@ -124,6 +129,17 @@
     <if_matched_sid>100050</if_matched_sid>
     <same_field>slack.actor.id</same_field>
     <description>Slack: user $(slack.actor.id) downloaded 50+ files in 24h (Replit-pattern insider)</description>
+    <group>slack,exfil,insider_threat,audit,</group>
+  </rule>
+
+  <!-- 100052 — deliberately sensitive test rule: 3 downloads / 2min by one actor.
+       Same chain as 100051 but tuned low for easy triggering during testing.
+       NOTE: Wazuh frequency rules fire on the (frequency+1)th match, so
+       frequency="2" fires on the 3rd download. -->
+  <rule id="100052" level="12" frequency="2" timeframe="120">
+    <if_matched_sid>100050</if_matched_sid>
+    <same_field>slack.actor.id</same_field>
+    <description>Slack: user $(slack.actor.id) downloaded 3+ files in 2min (test-tuned burst)</description>
     <group>slack,exfil,insider_threat,audit,</group>
   </rule>
 
@@ -256,19 +272,17 @@
   </rule>
 
   <!-- Gap 5 — off-hours activity burst.
-       `<time>` matches the wall-clock window at processing time; the burst child
-       fires at a LOWER threshold (15/1h) than the daytime download rule 100051
-       (50/24h). Business-hours window assumed 08:00–18:00 local. -->
-  <rule id="100093" level="6">
-    <if_sid>100050</if_sid>
-    <time>6:00 pm - 8:00 am</time>
-    <description>Slack: off-hours file download by $(slack.actor.id)</description>
-    <group>slack,insider_threat,off_hours,audit,</group>
-  </rule>
-
+       Implemented as a frequency rule on the base download rule (100050) plus a
+       `<time>` window, NOT an `if_sid` child. An `if_sid` child would override
+       100050 as the terminal rule during off-hours, which stops every
+       `if_matched_sid 100050` frequency rule (100051/100052) from counting.
+       `<time>` matches wall-clock processing time; business hours assumed
+       08:00–18:00 local. Fires at a LOWER threshold (15/1h) than the all-day
+       Replit rule 100051 (50/24h). -->
   <rule id="100094" level="12" frequency="15" timeframe="3600">
-    <if_matched_sid>100093</if_matched_sid>
+    <if_matched_sid>100050</if_matched_sid>
     <same_field>slack.actor.id</same_field>
+    <time>6:00 pm - 8:00 am</time>
     <description>Slack: $(slack.actor.id) downloaded 15+ files off-hours in 1h (lowered-threshold insider burst)</description>
     <group>slack,exfil,insider_threat,off_hours,audit,</group>
   </rule>

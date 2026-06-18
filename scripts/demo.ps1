@@ -18,7 +18,7 @@
   anomaly         1x audit anomaly                        100080  (level 12)
   export          1x export_started + 1x organization_exported  100081 + 100083
   login-geo       1x user_login from untrusted IP+country 100091 + 100092
-  off-hours       16x file_downloaded source=audit        100093 + 100094*
+  off-hours       16x file_downloaded source=audit        100094*
                   (* off-hours rules only fire when the manager processes the
                    burst inside the 18:00-08:00 window — see Gap 5)
 
@@ -137,8 +137,8 @@ function Get-ScenarioLines {
                         -Ip '192.0.2.10' -Country 'RU') )
         }
         'off-hours' {
-            # Gap 5: off-hours download burst -> 100093 (base) + 100094 (>=15 / 1h).
-            # NOTE: the <time> guard means 100093/100094 only fire if the manager
+            # Gap 5: off-hours download burst -> 100094 (16+ downloads / 1h off-hours).
+            # NOTE: the <time> guard means 100094 only fires if the manager
             # processes these inside 18:00-08:00 local; outside that window only the
             # daytime base rule 100050 matches.
             1..16 | ForEach-Object {

@@ -1,8 +1,10 @@
 slack:
-  token_bot: "${SLACK_BOT_TOKEN}"
-  token_app: "${SLACK_APP_TOKEN}"
+  token_bot:  "${SLACK_BOT_TOKEN}"
+  token_app:  "${SLACK_APP_TOKEN}"
+  token_user: "${SLACK_USER_TOKEN}"   # xoxp- (auditlogs:read) — Enterprise Grid
+  org_id:     "E0AN66GDRRU"
   sources:
-    audit:         { enabled: false, poll_seconds: 60 }
+    audit:         { enabled: true,  poll_seconds: 60 }   # file_downloaded etc. (Audit Logs API)
     events:        { enabled: true,  mode: socket }
     access_logs:   { enabled: false, poll_seconds: 300 }
     web_inventory: { enabled: false, poll_seconds: 3600 }

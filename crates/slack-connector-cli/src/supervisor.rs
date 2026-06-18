@@ -85,6 +85,13 @@ pub async fn run_supervisor(cfg: Config) -> anyhow::Result<()> {
                         metrics::counter!("wsc_sink_errors_total").increment(1);
                     } else {
                         health_for_loop.record_emit();
+                        tracing::info!(
+                            source = %src_label,
+                            action = %ev.slack.action,
+                            actor = ev.slack.actor.as_ref().and_then(|a| a.id.as_deref()).unwrap_or("-"),
+                            event_id = %ev.slack.event_id,
+                            "event sent to Wazuh sink"
+                        );
                         metrics::counter!("wsc_events_emitted_total", "source" => src_label).increment(1);
                     }
                 }

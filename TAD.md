@@ -357,7 +357,7 @@ Tracked in `INSIDER-THREAT-GAPS.md` — **all six closed (2026-06-10):**
 3. **Gap 3** ✅ — rules 100081–100083 cover `export_*` / `*_exported`.
 4. **Gap 4** ✅ — rules 100090–100092 read `slack.context.ip` / `.location` against
    CDB allow-lists in `wazuh-lists/` (impossible-travel still out of scope).
-5. **Gap 5** ✅ — rules 100093–100094 add an off-hours `<time>`-gated download burst
+5. **Gap 5** ✅ — rule 100094 adds an off-hours `<time>`-gated download burst
    at a lower threshold than 100051.
 6. **Gap 6** ✅ — `AccessLogsPoller` + `supervisor.rs` now use `token_user`.
 
